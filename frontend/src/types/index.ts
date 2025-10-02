@@ -11,6 +11,7 @@ export interface Note {
   content: string;
   tags: string[];
   pinned: boolean;
+  wordCount?: number;
   createdAt: string;
   updatedAt: string;
 }

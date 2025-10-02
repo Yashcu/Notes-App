@@ -3,187 +3,200 @@ import { noteAPI } from "../services/api";
 import { useAuthStore } from "../store/authStore";
 import type { Note } from "../types";
 import NoteEditor from "../features/notes/NoteEditor";
-import NoteCard from "../features/notes/NoteCard";
 import { Button } from "@/components/ui/button";
+import { Pin } from "lucide-react";
 import logo from "../assets/logo.svg";
 
 export default function Dashboard() {
   const [notes, setNotes] = useState<Note[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const { user, logout } = useAuthStore();
 
-  // Initial load
-  useEffect(() => {
-    fetchNotes();
-    fetchTags();
-  }, []);
-
-  const fetchNotes = async () => {
+  async function fetchNotes() {
     setLoading(true);
     try {
       const { data } = await noteAPI.getAllNotes();
-      setNotes(data.notes);
+      // Pinned notes first (already sorted by backend, but for safety)
+      const sorted = [...data.notes].sort((a, b) =>
+        b.pinned === a.pinned
+          ? new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+          : b.pinned
+          ? 1
+          : -1
+      );
+      setNotes(sorted);
+      if (sorted.length > 0) {
+        const found = sorted.find(
+          (n) => selectedNote && n._id === selectedNote._id
+        );
+        setSelectedNote(found || sorted[0]);
+      } else {
+        setSelectedNote(null);
+      }
     } catch {
       alert("Failed to fetch notes.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const fetchTags = async () => {
-    try {
-      const { data } = await noteAPI.getTags();
-      setTags(data.tags);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  // Note CRUD
-  const handleSaveNote = async (note: {
-    title: string;
-    content: string;
-    tags: string[];
-  }) => {
-    if (editingNote) {
-      await noteAPI.updateNote(editingNote._id, note);
-    } else {
-      await noteAPI.createNote(note);
-    }
+  useEffect(() => {
     fetchNotes();
-    fetchTags();
-    setEditingNote(null);
-  };
+    // eslint-disable-next-line
+  }, []);
 
-  const handleEdit = (note: Note) => {
-    setEditingNote(note);
-    setEditorOpen(true);
-  };
-
-  const handleDelete = async (note: Note) => {
-    if (window.confirm("Delete this note?")) {
-      await noteAPI.deleteNote(note._id);
-      fetchNotes();
-      fetchTags();
+  const handleCreateNote = async () => {
+    try {
+      const { data } = await noteAPI.createNote({
+        title: "Untitled Note",
+        content: "",
+        tags: [],
+      });
+      await fetchNotes();
+      setSelectedNote(data.note);
+    } catch {
+      alert("Failed to create note");
     }
   };
 
-  // Tag filter
-  const filteredNotes = selectedTag
-    ? notes.filter((n) => n.tags.includes(selectedTag))
-    : notes;
+  const handleSaveNote = async (updated: Partial<Note>) => {
+    if (!selectedNote) return;
+    try {
+      await noteAPI.updateNote(selectedNote._id, updated);
+      await fetchNotes();
+      setSelectedNote((prev) => prev && { ...prev, ...updated });
+    } catch {
+      alert("Failed to save note");
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (window.confirm("Delete this note?")) {
+      try {
+        await noteAPI.deleteNote(noteId);
+        await fetchNotes();
+      } catch {
+        alert("Failed to delete note");
+      }
+    }
+  };
+
+  function formatDate(dateStr: string) {
+    const date = new Date(dateStr);
+    const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} mins ago`;
+    if (mins < 1440) return `${Math.floor(mins / 60)} hours ago`;
+    return date.toLocaleDateString();
+  }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className={`flex h-screen bg-gray-50 overflow-hidden`}>
       {/* Sidebar */}
-      <aside className="w-64 min-h-screen bg-gradient-to-b from-indigo-900 to-indigo-700 text-white flex flex-col justify-between p-6 shadow-2xl">
-        <div>
-          <div className="flex items-center gap-2 mb-8 mt-1">
-            <img
-              src={logo}
-              alt="Notes Logo"
-              className="h-8 w-8 rounded shadow-lg"
-            />
-            <span className="text-xl font-bold tracking-tight">Notes</span>
-          </div>
-          <nav className="space-y-2">
-            <Button
-              variant={selectedTag === null ? "secondary" : "ghost"}
-              className={`w-full justify-start text-base font-semibold transition ${
-                selectedTag === null
-                  ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                  : "hover:bg-indigo-500/30"
-              }`}
-              onClick={() => setSelectedTag(null)}
-            >
-              All Notes{" "}
-              <span className="ml-2 text-xs text-indigo-200">
-                ({notes.length})
-              </span>
-            </Button>
-            {tags.map((tag) => (
-              <Button
-                key={tag}
-                variant={selectedTag === tag ? "secondary" : "ghost"}
-                className={`w-full justify-start text-base font-semibold transition ${
-                  selectedTag === tag
-                    ? "bg-blue-500 text-white hover:bg-blue-600"
-                    : "hover:bg-blue-500/30"
-                }`}
-                onClick={() => setSelectedTag(tag)}
-              >
-                #{tag}
-              </Button>
-            ))}
-          </nav>
-        </div>
-        <div className="mt-auto pt-4 border-t">
+      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 bg-gray-300 rounded-full flex items-center justify-center text-sm">
-              {user?.name?.charAt(0)}
+            <img src={logo} alt="Logo" className="h-6 w-6" />
+            <span className="text-lg font-bold text-purple-600">
+              NoteEditor
+            </span>
+          </div>
+        </div>
+        <div className="p-4">
+          <Button
+            onClick={handleCreateNote}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+          >
+            + New Note
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2">
+          <h3 className="px-2 text-xs font-semibold text-gray-500 uppercase mb-2">
+            MY NOTES
+          </h3>
+          {loading ? (
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <div
+                  key={i}
+                  className="h-16 bg-gray-100 rounded animate-pulse"
+                />
+              ))}
             </div>
-            <span className="text-sm text-gray-600">{user?.name}</span>
+          ) : notes.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center mt-8">
+              No notes yet
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {notes.map((note) => (
+                <div
+                  key={note._id}
+                  onClick={() => setSelectedNote(note)}
+                  className={`p-3 rounded cursor-pointer transition ${
+                    selectedNote?._id === note._id
+                      ? "bg-purple-50 border border-purple-200"
+                      : "hover:bg-gray-50"
+                  }`}
+                >
+                  <h4 className="font-medium text-sm text-gray-900 truncate flex items-center gap-2">
+                    {note.title || "Untitled"}
+                    {note.pinned && <Pin className="h-3 w-3 text-amber-500" />}
+                  </h4>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-gray-500 flex items-center">
+                      {formatDate(note.updatedAt)}
+                      {note.pinned}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {note.wordCount || 0} words
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="p-4 border-t border-gray-200">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="h-8 w-8 bg-purple-100 rounded-full flex items-center justify-center text-sm font-semibold text-purple-600">
+              {user?.name?.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {user?.name}
+              </p>
+              <p className="text-xs text-gray-500">Free Plan</p>
+            </div>
           </div>
           <Button
-            variant="link"
-            className="mt-2 text-red-500 px-0"
+            variant="ghost"
+            size="sm"
+            className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
             onClick={logout}
           >
             Sign out
           </Button>
         </div>
       </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 p-8 overflow-y-auto">
-        <div className="flex flex-wrap items-center justify-between mb-10 gap-2">
-          <h1 className="text-3xl font-bold text-gray-800">My Notes</h1>
-          <Button
-            className="bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-indigo-600"
-            onClick={() => {
-              setEditorOpen(true);
-              setEditingNote(null);
-            }}
-          >
-            + New Note
-          </Button>
-        </div>
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-40 bg-gray-200 animate-pulse rounded" />
-            ))}
-          </div>
-        ) : filteredNotes.length === 0 ? (
-          <div className="text-center text-gray-400 mt-20">No notes found.</div>
+      {/* Main Editor */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {selectedNote ? (
+          <NoteEditor
+            note={selectedNote}
+            onSave={handleSaveNote}
+            onDelete={() => handleDeleteNote(selectedNote._id)}
+          />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredNotes.map((note) => (
-              <NoteCard
-                key={note._id}
-                note={note}
-                onEdit={() => handleEdit(note)}
-                onDelete={() => handleDelete(note)}
-              />
-            ))}
+          <div className="flex-1 flex items-center justify-center text-gray-400">
+            <div className="text-center">
+              <p className="text-lg mb-2">No note selected</p>
+              <p className="text-sm">Create a new note to get started</p>
+            </div>
           </div>
         )}
       </main>
-
-      {/* Editor Dialog Modal */}
-      <NoteEditor
-        open={editorOpen}
-        onClose={() => {
-          setEditorOpen(false);
-          setEditingNote(null);
-        }}
-        onSave={handleSaveNote}
-        initial={editingNote ?? undefined}
-      />
     </div>
   );
 }

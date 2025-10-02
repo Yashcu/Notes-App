@@ -1,195 +1,340 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "../../components/ui/dialog";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "../../components/ui/tabs";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Badge } from "../../components/ui/badge";
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  List,
+  ListOrdered,
+  Quote,
+  Link as LinkIcon,
+  Image as ImageIcon,
+  Code,
+  Eye,
+  Maximize,
+  Pin,
+  Share2,
+  MoreVertical,
+  Trash2,
+  Copy,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-interface NoteEditorProps {
-  open: boolean;
-  onClose: () => void;
-  onSave: (note: {
-    title: string;
-    content: string;
-    tags: string[];
-    pinned?: boolean;
-  }) => void;
-  initial?: {
-    title?: string;
-    content?: string;
-    tags?: string[];
-    pinned?: boolean;
-  };
-}
+import type { Note } from "../../types";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 export default function NoteEditor({
-  open,
-  onClose,
+  note,
   onSave,
-  initial = {},
-}: NoteEditorProps) {
-  // Controlled fields
-  const [title, setTitle] = useState(initial.title || "");
-  const [content, setContent] = useState(initial.content || "");
-  const [tagInput, setTagInput] = useState("");
-  const [tags, setTags] = useState<string[]>(initial.tags || []);
-  const [pinned, setPinned] = useState(initial.pinned || false);
+  onDelete,
+}: {
+  note: Note;
+  onSave: (note: Partial<Note>) => void;
+  onDelete: () => void;
+}) {
+  const [title, setTitle] = useState(note.title);
+  const [content, setContent] = useState(note.content);
+  const [lastSaved, setLastSaved] = useState<string>("just now");
+  const [isSaving, setIsSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
+  const [focusMode, setFocusMode] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Focus title field when dialog opens
-  const titleRef = useRef<HTMLInputElement | null>(null);
+  // Update fields when switching notes
   useEffect(() => {
-    if (open) setTimeout(() => titleRef.current?.focus(), 200);
-  }, [open]);
-
-  // Tag add/remove
-  const handleTagAdd = () => {
-    const newTag = tagInput.trim();
-    if (newTag && !tags.includes(newTag)) setTags([...tags, newTag]);
-    setTagInput("");
-  };
-  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      handleTagAdd();
-    }
-  };
-  const removeTag = (tag: string) => setTags(tags.filter((t) => t !== tag));
-
-  // Save note handler
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    onSave({ title, content, tags, pinned });
-    // Reset state (optional, if you want to clear on close)
-    setTitle("");
-    setContent("");
-    setTags([]);
-    setPinned(false);
-    onClose();
-  };
+    setTitle(note.title);
+    setContent(note.content);
+  }, [note._id]);
 
   useEffect(() => {
-    // Re-populate state when editing a new note
-    setTitle(initial.title || "");
-    setContent(initial.content || "");
-    setTags(initial.tags || []);
-    setPinned(initial.pinned || false);
-  }, [JSON.stringify(initial), open]);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      if (title !== note.title || content !== note.content) handleAutoSave();
+    }, 1000);
+
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [title, content]);
+
+  const handleAutoSave = async () => {
+    setIsSaving(true);
+    await onSave({ title, content });
+    setLastSaved("just now");
+    setIsSaving(false);
+  };
+
+  const insertMarkdown = (before: string, after: string = before) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = content.substring(start, end);
+    const newText =
+      content.substring(0, start) +
+      before +
+      selectedText +
+      after +
+      content.substring(end);
+    setContent(newText);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + before.length, end + before.length);
+    }, 0);
+  };
+
+  const wordCount = content
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
+  const charCount = content.length;
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md w-full">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-bold">
-            {initial.title ? "Edit Note" : "New Note"}
-          </DialogTitle>
-          <DialogDescription>
-            Write, edit, and preview your note in Markdown. Add tags for easy
-            organization.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSave} className="flex flex-col space-y-5">
-          {/* Title field */}
+    <div
+      className={`flex flex-col h-full bg-white ${
+        focusMode ? "fixed inset-0 z-50 bg-white" : ""
+      }`}
+    >
+      {/* Header */}
+      <div className="border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+        <div className="flex-1 max-w-2xl">
           <Input
-            ref={titleRef}
-            placeholder="Title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            required
+            className="text-2xl font-bold border-none shadow-none focus-visible:ring-0 px-0"
+            placeholder="Welcome to NoteEditor"
           />
-          {/* Tags input */}
-          <div>
-            <div className="flex gap-2 mb-2">
-              <Input
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-                placeholder="Add tag and hit Enter"
-                className="w-full"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={handleTagAdd}
-              >
-                Add
-              </Button>
-            </div>
-            <div className="flex gap-1 flex-wrap">
-              {tags.map((tag) => (
-                <Badge
-                  key={tag}
-                  variant="secondary"
-                  className="cursor-pointer"
-                  onClick={() => removeTag(tag)}
-                >
-                  {tag} <span className="ml-1 text-gray-400">&times;</span>
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          {/* Pin note */}
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="pin"
-              checked={pinned}
-              onChange={(e) => setPinned(e.target.checked)}
-              className="w-4 h-4"
-            />
-            <label htmlFor="pin" className="text-sm text-gray-600 select-none">
-              Pin this note
-            </label>
-          </div>
-
-          {/* Markdown Editor/Preview Tabs */}
-          <Tabs defaultValue="edit" className="w-full">
-            <TabsList className="mb-2">
-              <TabsTrigger value="edit">Edit</TabsTrigger>
-              <TabsTrigger value="preview">Preview</TabsTrigger>
-            </TabsList>
-            <TabsContent value="edit" className="w-full">
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="w-full min-h-[120px] border rounded p-2 font-mono resize-vertical bg-gray-50"
-                placeholder="Write Markdown here..."
-              />
-            </TabsContent>
-            <TabsContent
-              value="preview"
-              className="bg-gray-50 rounded p-2 min-h-[120px] text-sm border"
-            >
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {content || "Nothing to preview."}
-              </ReactMarkdown>
-            </TabsContent>
-          </Tabs>
-
+        </div>
+        <div className="flex items-center gap-2">
+          {/* PIN BUTTON */}
           <Button
-            type="submit"
-            className="w-full mt-4"
-            disabled={!title.trim()}
+            size="icon"
+            variant={note.pinned ? "secondary" : "ghost"}
+            title={note.pinned ? "Unpin Note" : "Pin Note"}
+            onClick={() => onSave({ pinned: !note.pinned })}
           >
-            {initial.title ? "Update Note" : "Create Note"}
+            <Pin
+              className={`h-5 w-5 ${
+                note.pinned ? "text-amber-500" : "text-gray-400"
+              }`}
+            />
           </Button>
-        </form>
-      </DialogContent>
-    </Dialog>
+          <Button
+            size="sm"
+            variant="ghost"
+            title="Share"
+            onClick={() =>
+              navigator.clipboard.writeText(
+                `${window.location.origin}/dashboard?note=${note._id}`
+              )
+            }
+          >
+            <Share2 className="h-4 w-4 mr-1" />
+            Share
+          </Button>
+          <Button size="icon" variant="ghost" onClick={onDelete} title="Delete">
+            <Trash2 className="h-4 w-4 text-red-600" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem
+                onClick={() => navigator.clipboard.writeText(content)}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Copy note
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  /* implement export/duplicate logic */
+                }}
+              >
+                Export
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      {/* Toolbar */}
+      <div className="border-b border-gray-200 px-6 py-2 flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("**")}
+            title="Bold"
+          >
+            <Bold className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("*")}
+            title="Italic"
+          >
+            <Italic className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("<u>", "</u>")}
+            title="Underline"
+          >
+            <Underline className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("~~")}
+            title="Strikethrough"
+          >
+            <Strikethrough className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("\n- ", "")}
+            title="Bullet List"
+          >
+            <List className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("\n1. ", "")}
+            title="Numbered List"
+          >
+            <ListOrdered className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("\n> ", "")}
+            title="Quote"
+          >
+            <Quote className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("[", "](url)")}
+            title="Link"
+          >
+            <LinkIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("![alt](", ")")}
+            title="Image"
+          >
+            <ImageIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => insertMarkdown("``````")}
+            title="Code Block"
+          >
+            <Code className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span>Last saved: {isSaving ? "saving..." : lastSaved}</span>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8"
+            onClick={() => setActiveTab("preview")}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8"
+            onClick={() => setFocusMode((f) => !f)}
+          >
+            <Maximize className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      {/* Editor Tabs */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "edit" | "preview")}
+        className="flex-1 flex flex-col"
+      >
+        <div className="px-6 py-2 border-b border-gray-100">
+          <TabsList className="h-8">
+            <TabsTrigger value="edit" className="text-sm">
+              Edit
+            </TabsTrigger>
+            <TabsTrigger value="preview" className="text-sm">
+              Preview
+            </TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent
+          value="edit"
+          className="flex-1 px-6 py-4 overflow-y-auto m-0"
+        >
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="w-full h-full resize-none border-none outline-none font-mono text-sm leading-relaxed"
+            placeholder="This is a simple note editor where you can write your thoughts, ideas, or anything you want to remember..."
+          />
+        </TabsContent>
+        <TabsContent
+          value="preview"
+          className="flex-1 px-6 py-4 overflow-y-auto prose max-w-none m-0"
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {content || "*Nothing to preview*"}
+          </ReactMarkdown>
+        </TabsContent>
+      </Tabs>
+      {/* Footer */}
+      <div className="border-t border-gray-200 px-6 py-2 flex items-center justify-between text-sm text-gray-500">
+        <span>
+          {wordCount} words | {charCount} characters
+        </span>
+        <div className="flex items-center gap-4">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            onClick={() => setActiveTab("preview")}
+          >
+            <Eye className="h-3 w-3" />
+          </Button>
+          <span className="text-xs">Preview</span>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
+            onClick={() => setFocusMode((f) => !f)}
+          >
+            <Maximize className="h-3 w-3" />
+          </Button>
+          <span className="text-xs">Focus Mode</span>
+        </div>
+      </div>
+    </div>
   );
 }

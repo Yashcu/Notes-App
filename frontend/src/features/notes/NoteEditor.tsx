@@ -1,3 +1,4 @@
+import rehypeRaw from "rehype-raw";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +50,6 @@ export default function NoteEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Update fields when switching notes
   useEffect(() => {
     setTitle(note.title);
     setContent(note.content);
@@ -73,24 +73,100 @@ export default function NoteEditor({
     setIsSaving(false);
   };
 
-  const insertMarkdown = (before: string, after: string = before) => {
+  function insertMarkdown(type: string) {
     const textarea = textareaRef.current;
     if (!textarea) return;
+
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const selectedText = content.substring(start, end);
-    const newText =
-      content.substring(0, start) +
-      before +
-      selectedText +
-      after +
-      content.substring(end);
-    setContent(newText);
+    const selected = content.slice(start, end);
+
+    let before = "",
+      after = "",
+      newText = "",
+      cursorMove = 0;
+
+    if (type === "bold") {
+      before = "**";
+      after = "**";
+      newText = selected ? before + selected + after : "**bold text**";
+      cursorMove = selected ? before.length : 2;
+    } else if (type === "italic") {
+      before = "*";
+      after = "*";
+      newText = selected ? before + selected + after : "*italic*";
+      cursorMove = selected ? before.length : 1;
+    } else if (type === "strikethrough") {
+      before = "~~";
+      after = "~~";
+      newText = selected ? before + selected + after : "~~strike~~";
+      cursorMove = selected ? before.length : 2;
+    } else if (type === "underline") {
+      before = "<u>";
+      after = "</u>";
+      newText = selected ? before + selected + after : "<u>underline</u>";
+      cursorMove = selected ? before.length : 3;
+    } else if (type === "ulist") {
+      newText = selected
+        ? selected
+            .split("\n")
+            .map((line) => (line.startsWith("- ") ? line : `- ${line}`))
+            .join("\n")
+        : "- list item";
+      cursorMove = selected ? 0 : 2;
+    } else if (type === "olist") {
+      newText = selected
+        ? selected
+            .split("\n")
+            .map((line, i) => (/\d\. /.test(line) ? line : `${i + 1}. ${line}`))
+            .join("\n")
+        : "1. list item";
+      cursorMove = selected ? 0 : 3;
+    } else if (type === "quote") {
+      newText = selected
+        ? selected
+            .split("\n")
+            .map((line) => (line.startsWith("> ") ? line : `> ${line}`))
+            .join("\n")
+        : "> quote";
+      cursorMove = selected ? 0 : 2;
+    } else if (type === "code") {
+      before = "``";
+      after = "\n```";
+      newText = selected ? before + selected + after : "``````";
+      cursorMove = selected ? before.length : 3;
+    } else if (type === "link") {
+      newText = selected ? `[${selected}](url)` : "[text](url)";
+      cursorMove = selected ? 1 : 1;
+    } else if (type === "image") {
+      newText = selected ? `![alt](${selected})` : "![alt](url)";
+      cursorMove = selected ? 4 : 7;
+    }
+
+    // Compose new content
+    const updated = content.slice(0, start) + newText + content.slice(end);
+
+    setContent(updated);
+
+    // Focus textarea & select inserted text if needed
     setTimeout(() => {
       textarea.focus();
-      textarea.setSelectionRange(start + before.length, end + before.length);
+      if (!selected) {
+        let selStart = start + cursorMove;
+        let selEnd = start + newText.length - cursorMove;
+        if (type === "link") {
+          selStart = start + 1;
+          selEnd = start + 5;
+        } else if (type === "image") {
+          selStart = start + 6;
+          selEnd = start + 9;
+        }
+        textarea.setSelectionRange(selStart, selEnd);
+      } else {
+        textarea.setSelectionRange(start + before.length, end + before.length);
+      }
     }, 0);
-  };
+  }
 
   const wordCount = content
     .trim()
@@ -115,7 +191,6 @@ export default function NoteEditor({
           />
         </div>
         <div className="flex items-center gap-2">
-          {/* PIN BUTTON */}
           <Button
             size="icon"
             variant={note.pinned ? "secondary" : "ghost"}
@@ -174,31 +249,31 @@ export default function NoteEditor({
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("**")}
-            title="Bold"
+            onClick={() => insertMarkdown("bold")}
+            title="Bold (Ctrl+B)"
           >
             <Bold className="h-4 w-4" />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("*")}
-            title="Italic"
+            onClick={() => insertMarkdown("italic")}
+            title="Italic (Ctrl+I)"
           >
             <Italic className="h-4 w-4" />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("<u>", "</u>")}
-            title="Underline"
+            onClick={() => insertMarkdown("underline")}
+            title="Underline (Ctrl+U)"
           >
             <Underline className="h-4 w-4" />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("~~")}
+            onClick={() => insertMarkdown("strikethrough")}
             title="Strikethrough"
           >
             <Strikethrough className="h-4 w-4" />
@@ -206,7 +281,7 @@ export default function NoteEditor({
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("\n- ", "")}
+            onClick={() => insertMarkdown("ulist")}
             title="Bullet List"
           >
             <List className="h-4 w-4" />
@@ -214,7 +289,7 @@ export default function NoteEditor({
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("\n1. ", "")}
+            onClick={() => insertMarkdown("olist")}
             title="Numbered List"
           >
             <ListOrdered className="h-4 w-4" />
@@ -222,7 +297,7 @@ export default function NoteEditor({
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("\n> ", "")}
+            onClick={() => insertMarkdown("quote")}
             title="Quote"
           >
             <Quote className="h-4 w-4" />
@@ -230,15 +305,15 @@ export default function NoteEditor({
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("[", "](url)")}
-            title="Link"
+            onClick={() => insertMarkdown("link")}
+            title="Link (Ctrl+K)"
           >
             <LinkIcon className="h-4 w-4" />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("![alt](", ")")}
+            onClick={() => insertMarkdown("image")}
             title="Image"
           >
             <ImageIcon className="h-4 w-4" />
@@ -246,7 +321,7 @@ export default function NoteEditor({
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("``````")}
+            onClick={() => insertMarkdown("code")}
             title="Code Block"
           >
             <Code className="h-4 w-4" />
@@ -298,13 +373,31 @@ export default function NoteEditor({
             onChange={(e) => setContent(e.target.value)}
             className="w-full h-full resize-none border-none outline-none font-mono text-sm leading-relaxed"
             placeholder="This is a simple note editor where you can write your thoughts, ideas, or anything you want to remember..."
+            onKeyDown={(e) => {
+              if (e.ctrlKey && e.key === "b") {
+                e.preventDefault();
+                insertMarkdown("bold");
+              } else if (e.ctrlKey && e.key === "i") {
+                e.preventDefault();
+                insertMarkdown("italic");
+              } else if (e.ctrlKey && e.key === "u") {
+                e.preventDefault();
+                insertMarkdown("underline");
+              } else if (e.ctrlKey && e.key === "k") {
+                e.preventDefault();
+                insertMarkdown("link");
+              }
+            }}
           />
         </TabsContent>
         <TabsContent
           value="preview"
           className="flex-1 px-6 py-4 overflow-y-auto prose max-w-none m-0"
         >
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw]}
+          >
             {content || "*Nothing to preview*"}
           </ReactMarkdown>
         </TabsContent>

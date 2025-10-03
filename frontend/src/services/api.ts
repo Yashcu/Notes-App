@@ -1,7 +1,10 @@
 import axios from 'axios';
 
+const baseURL = import.meta.env.VITE_API_URL;
+if (!baseURL) throw new Error("VITE_API_URL is not defined in env!");
+
 const API = axios.create({
-    baseURL: import.meta.env.VITE_API_URL,
+  baseURL
 });
 
 API.interceptors.request.use((config) => {
@@ -18,7 +21,7 @@ export const authAPI = {
     API.post('/auth/login', data),
 };
 
-// Notes APIs
+// Note APIs
 export const noteAPI = {
   getAllNotes: () => API.get('/notes'),
   getNoteById: (id: string) => API.get(`/notes/${id}`),

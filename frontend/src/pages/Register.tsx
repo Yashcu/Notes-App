@@ -1,3 +1,7 @@
+/**
+ * Register Page — new user signup for Markdown Notes App.
+ * — Uses shadcn/ui components for a unified look —
+ */
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { authAPI } from "../services/api";
@@ -12,6 +16,7 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
@@ -19,12 +24,14 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMsg("");
+
     try {
       const { data } = await authAPI.register({ name, email, password });
       setAuth(data.user, data.token);
       navigate("/dashboard");
     } catch (error: any) {
-      alert(error.response?.data?.message || "Registration failed");
+      setErrorMsg(error.response?.data?.message || "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -50,6 +57,7 @@ export default function Register() {
                 onChange={(e) => setName(e.target.value)}
                 required
                 className="bg-white"
+                disabled={loading}
               />
             </div>
             <div className="space-y-1">
@@ -62,6 +70,7 @@ export default function Register() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="bg-white"
+                disabled={loading}
               />
             </div>
             <div className="space-y-1">
@@ -74,9 +83,13 @@ export default function Register() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="bg-white"
+                disabled={loading}
               />
             </div>
-            <Button type="submit" className="w-full mt-2" disabled={loading}>
+            {errorMsg && (
+              <div className="text-red-600 text-sm text-center">{errorMsg}</div>
+            )}
+            <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Registering..." : "Register"}
             </Button>
           </form>

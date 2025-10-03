@@ -1,3 +1,7 @@
+/**
+ * Login Page — user authentication for Markdown Notes App.
+ * — Uses shadcn/ui components for clean, consistent UI —
+ */
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { authAPI } from "../services/api";
@@ -11,6 +15,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
@@ -18,13 +23,14 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMsg(""); // Reset error
 
     try {
       const { data } = await authAPI.login({ email, password });
       setAuth(data.user, data.token);
       navigate("/dashboard");
     } catch (error: any) {
-      alert(error.response?.data?.message || "Login failed");
+      setErrorMsg(error.response?.data?.message || "Login failed");
     } finally {
       setLoading(false);
     }
@@ -50,6 +56,7 @@ export default function Login() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="bg-white"
+                disabled={loading}
               />
             </div>
             <div className="space-y-1">
@@ -62,9 +69,13 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="bg-white"
+                disabled={loading}
               />
             </div>
-            <Button type="submit" className="w-full mt-2" disabled={loading}>
+            {errorMsg && (
+              <div className="text-red-600 text-sm text-center">{errorMsg}</div>
+            )}
+            <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Logging in..." : "Login"}
             </Button>
           </form>

@@ -7,14 +7,26 @@ import { Button } from "@/components/ui/button";
 import { Pin } from "lucide-react";
 import logo from "../assets/logo.svg";
 
+/** Format date nicely for sidebar display */
+function formatDate(dateStr: string) {
+  const date = new Date(dateStr);
+  const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} mins ago`;
+  if (mins < 1440) return `${Math.floor(mins / 60)} hours ago`;
+  return date.toLocaleDateString();
+}
+
 export default function Dashboard() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
   const { user, logout } = useAuthStore();
 
   async function fetchNotes() {
     setLoading(true);
+    setErrorMsg("");
     try {
       const { data } = await noteAPI.getAllNotes();
       // Pinned notes first (already sorted by backend, but for safety)
@@ -35,7 +47,9 @@ export default function Dashboard() {
         setSelectedNote(null);
       }
     } catch {
-      alert("Failed to fetch notes.");
+      setErrorMsg("Failed to fetch notes.");
+      setNotes([]);
+      setSelectedNote(null);
     } finally {
       setLoading(false);
     }
@@ -56,7 +70,7 @@ export default function Dashboard() {
       await fetchNotes();
       setSelectedNote(data.note);
     } catch {
-      alert("Failed to create note");
+      setErrorMsg("Failed to create note");
     }
   };
 
@@ -67,7 +81,7 @@ export default function Dashboard() {
       await fetchNotes();
       setSelectedNote((prev) => prev && { ...prev, ...updated });
     } catch {
-      alert("Failed to save note");
+      setErrorMsg("Failed to save note");
     }
   };
 
@@ -77,19 +91,10 @@ export default function Dashboard() {
         await noteAPI.deleteNote(noteId);
         await fetchNotes();
       } catch {
-        alert("Failed to delete note");
+        setErrorMsg("Failed to delete note");
       }
     }
   };
-
-  function formatDate(dateStr: string) {
-    const date = new Date(dateStr);
-    const mins = Math.floor((Date.now() - date.getTime()) / 60000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins} mins ago`;
-    if (mins < 1440) return `${Math.floor(mins / 60)} hours ago`;
-    return date.toLocaleDateString();
-  }
 
   return (
     <div className={`flex h-screen bg-gray-50 overflow-hidden`}>
@@ -133,6 +138,8 @@ export default function Dashboard() {
               {notes.map((note) => (
                 <div
                   key={note._id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedNote(note)}
                   className={`p-3 rounded cursor-pointer transition ${
                     selectedNote?._id === note._id
@@ -147,7 +154,6 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-xs text-gray-500 flex items-center">
                       {formatDate(note.updatedAt)}
-                      {note.pinned}
                     </span>
                     <span className="text-xs text-gray-400">
                       {note.wordCount || 0} words
@@ -155,6 +161,11 @@ export default function Dashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          {errorMsg && (
+            <div className="text-red-600 text-sm text-center mt-4">
+              {errorMsg}
             </div>
           )}
         </div>

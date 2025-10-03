@@ -1,8 +1,15 @@
-import express from 'express';
-import { register, login } from '../controllers/authController';
+import express from "express";
+import { register, login } from "../controllers/authController";
 
+/**
+ * Auth Routes — handles user registration and login requests.
+ */
 const router = express.Router();
-router.post('/register', register);
-router.post('/login', login);
+
+// Register new user
+router.post("/register", register);
+
+// Login existing user
+router.post("/login", login);
 
 export default router;

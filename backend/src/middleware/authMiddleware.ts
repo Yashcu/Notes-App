@@ -1,28 +1,45 @@
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 
-
-export interface AuthRequest extends Request{
-    userId?: string;
+/**
+ * Extends Express Request with userId for authenticated routes.
+ */
+export interface AuthRequest extends Request {
+  userId?: string;
 }
 
-export const protect = (req: AuthRequest, res: Response, next: NextFunction) => {
-    const token = req.headers.authorization?.split(' ')[1];
+// Error messages constant
+const ERR_NO_TOKEN = "No token provided";
+const ERR_TOKEN_INVALID = "Invalid token";
 
-    if(!token){
-        return res.status(401).json({
-            message: 'No token provided'
-        });
-    }
+/**
+ * Middleware to protect routes and require JWT authentication.
+ */
+export const protect = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  const header = req.headers.authorization;
 
-    try{
-        const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
-        req.userId = decoded.userId;
-        next();
-    }
-    catch(error){
-        res.status(401).json({
-            message: 'Invalid token'
-        });
-    }
-}
+  // Should be in format: "Bearer <token>"
+  if (!header || !header.startsWith("Bearer ")) {
+    return res.status(401).json({
+      success: false,
+      message: ERR_NO_TOKEN,
+    });
+  }
+
+  const token = header.split(" ")[1];
+
+  try {
+    const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
+    req.userId = decoded.userId;
+    next();
+  } catch {
+    res.status(401).json({
+      success: false,
+      message: ERR_TOKEN_INVALID,
+    });
+  }
+};

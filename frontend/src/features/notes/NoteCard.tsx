@@ -1,3 +1,7 @@
+/**
+ * NoteEditor (reusable) — Markdown editor for notes.
+ * Features: formatting toolbar, live preview, autosave, stats.
+ */
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +33,23 @@ interface NoteEditorProps {
   onDelete: () => void;
 }
 
+const toolbarActions = [
+  { icon: Bold, before: "**", after: "**", label: "Bold" },
+  { icon: Italic, before: "*", after: "*", label: "Italic" },
+  { icon: Underline, before: "<u>", after: "</u>", label: "Underline" },
+  { icon: Strikethrough, before: "~~", after: "~~", label: "Strikethrough" },
+  { icon: List, before: "\n- ", after: "", label: "Bullet List" },
+  { icon: ListOrdered, before: "\n1. ", after: "", label: "Numbered List" },
+  { icon: Quote, before: "\n> ", after: "", label: "Quote" },
+  { icon: LinkIcon, before: "[", after: "](url)", label: "Link" },
+  { icon: ImageIcon, before: "![alt](", after: ")", label: "Image" },
+  { icon: Code, before: "``````", after: "", label: "Code Block" },
+];
+
+function countWords(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
 export default function NoteEditor({
   note,
   onSave,
@@ -36,35 +57,24 @@ export default function NoteEditor({
 }: NoteEditorProps) {
   const [title, setTitle] = useState(note.title);
   const [content, setContent] = useState(note.content);
-  const [lastSaved, setLastSaved] = useState<string>("just now");
+  const [lastSaved, setLastSaved] = useState("just now");
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // FIXED
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Word count calculation
-  const wordCount = content
-    .trim()
-    .split(/\s+/)
-    .filter((word) => word.length > 0).length;
-  const charCount = content.length;
-
-  // Auto-save effect
   useEffect(() => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
+    setTitle(note.title);
+    setContent(note.content);
+  }, [note._id]);
 
+  useEffect(() => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      if (title !== note.title || content !== note.content) {
-        handleAutoSave();
-      }
+      if (title !== note.title || content !== note.content) handleAutoSave();
     }, 1000);
-
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [title, content]);
 
@@ -75,11 +85,9 @@ export default function NoteEditor({
     setIsSaving(false);
   };
 
-  // Toolbar actions
-  const insertMarkdown = (before: string, after: string = before) => {
+  function insertMarkdown(before: string, after: string = before) {
     const textarea = textareaRef.current;
     if (!textarea) return;
-
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const selectedText = content.substring(start, end);
@@ -89,50 +97,15 @@ export default function NoteEditor({
       selectedText +
       after +
       content.substring(end);
-
     setContent(newText);
     setTimeout(() => {
       textarea.focus();
       textarea.setSelectionRange(start + before.length, end + before.length);
     }, 0);
-  };
+  }
 
-  const toolbarActions = [
-    { icon: Bold, action: () => insertMarkdown("**"), label: "Bold" },
-    { icon: Italic, action: () => insertMarkdown("*"), label: "Italic" },
-    {
-      icon: Underline,
-      action: () => insertMarkdown("<u>", "</u>"),
-      label: "Underline",
-    },
-    {
-      icon: Strikethrough,
-      action: () => insertMarkdown("~~"),
-      label: "Strikethrough",
-    },
-    {
-      icon: List,
-      action: () => insertMarkdown("\n- ", ""),
-      label: "Bullet List",
-    },
-    {
-      icon: ListOrdered,
-      action: () => insertMarkdown("\n1. ", ""),
-      label: "Numbered List",
-    },
-    { icon: Quote, action: () => insertMarkdown("\n> ", ""), label: "Quote" },
-    {
-      icon: LinkIcon,
-      action: () => insertMarkdown("[", "](url)"),
-      label: "Link",
-    },
-    {
-      icon: ImageIcon,
-      action: () => insertMarkdown("![alt](", ")"),
-      label: "Image",
-    },
-    { icon: Code, action: () => insertMarkdown("``````"), label: "Code Block" },
-  ];
+  const wordCount = countWords(content);
+  const charCount = content.length;
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -144,6 +117,7 @@ export default function NoteEditor({
             onChange={(e) => setTitle(e.target.value)}
             className="text-2xl font-bold border-none shadow-none focus-visible:ring-0 px-0"
             placeholder="Welcome to NoteEditor"
+            disabled={isSaving}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -159,16 +133,15 @@ export default function NoteEditor({
           </Button>
         </div>
       </div>
-
       {/* Toolbar */}
       <div className="border-b border-gray-200 px-6 py-2 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1">
-          {toolbarActions.map(({ icon: Icon, action, label }, idx) => (
+          {toolbarActions.map(({ icon: Icon, before, after, label }) => (
             <Button
-              key={idx}
+              key={label}
               size="icon"
               variant="ghost"
-              onClick={action}
+              onClick={() => insertMarkdown(before, after)}
               title={label}
               className="h-8 w-8"
             >
@@ -186,7 +159,6 @@ export default function NoteEditor({
           </Button>
         </div>
       </div>
-
       {/* Editor Tabs */}
       <Tabs
         value={activeTab}
@@ -203,7 +175,6 @@ export default function NoteEditor({
             </TabsTrigger>
           </TabsList>
         </div>
-
         <TabsContent
           value="edit"
           className="flex-1 px-6 py-4 overflow-y-auto m-0"
@@ -216,7 +187,6 @@ export default function NoteEditor({
             placeholder="This is a simple note editor where you can write your thoughts, ideas, or anything you want to remember..."
           />
         </TabsContent>
-
         <TabsContent
           value="preview"
           className="flex-1 px-6 py-4 overflow-y-auto prose max-w-none m-0"
@@ -226,7 +196,6 @@ export default function NoteEditor({
           </ReactMarkdown>
         </TabsContent>
       </Tabs>
-
       {/* Footer */}
       <div className="border-t border-gray-200 px-6 py-2 flex items-center justify-between text-sm text-gray-500">
         <span>

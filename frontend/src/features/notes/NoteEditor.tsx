@@ -1,8 +1,19 @@
-import rehypeRaw from "rehype-raw";
-import { useState, useEffect, useRef } from "react";
+/**
+ * TipTap-based Markdown Note Editor for React + TypeScript apps.
+ * Features: formatting toolbar, edit/preview tabs, auto-save, word/char count.
+ */
+
+import { useState, useEffect } from "react";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
+import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { createLowlight } from "lowlight";
+const lowlight = createLowlight();
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Bold,
   Italic,
@@ -22,8 +33,6 @@ import {
   Trash2,
   Copy,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { Note } from "../../types";
 import {
   DropdownMenu,
@@ -32,147 +41,126 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 
+interface NoteEditorProps {
+  note: Note;
+  onSave: (note: Partial<Note>) => Promise<void>;
+  onDelete: () => void;
+}
+
 export default function NoteEditor({
   note,
   onSave,
   onDelete,
-}: {
-  note: Note;
-  onSave: (note: Partial<Note>) => void;
-  onDelete: () => void;
-}) {
+}: NoteEditorProps) {
   const [title, setTitle] = useState(note.title);
-  const [content, setContent] = useState(note.content);
-  const [lastSaved, setLastSaved] = useState<string>("just now");
+  const [lastSaved, setLastSaved] = useState("just now");
   const [isSaving, setIsSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
   const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
   const [focusMode, setFocusMode] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // TipTap Editor instance (loads note content)
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Link,
+      Image,
+      CodeBlockLowlight.configure({ lowlight }),
+    ],
+    content: note.content,
+    autofocus: true,
+    onUpdate: ({ editor }) => {
+      // Auto-save when content/titles change
+      const html = editor.getHTML();
+      if (html !== note.content || title !== note.title) {
+        handleAutoSave(html);
+      }
+    },
+  });
+
+  // Reset TipTap on new note load
   useEffect(() => {
     setTitle(note.title);
-    setContent(note.content);
-  }, [note._id]);
+    if (editor) editor.commands.setContent(note.content || "");
+  }, [note._id, editor]);
 
-  useEffect(() => {
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      if (title !== note.title || content !== note.content) handleAutoSave();
-    }, 1000);
-
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    };
-  }, [title, content]);
-
-  const handleAutoSave = async () => {
+  // Auto-save handler (with debounce managed by TipTap updates)
+  const handleAutoSave = async (htmlContent: string) => {
     setIsSaving(true);
-    await onSave({ title, content });
-    setLastSaved("just now");
+    setErrorMsg("");
+    try {
+      await onSave({ title, content: htmlContent });
+      setLastSaved("just now");
+    } catch {
+      setErrorMsg("Failed to save note");
+    }
     setIsSaving(false);
   };
 
-  function insertMarkdown(type: string) {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+  // Toolbar Formatting Commands
+  const toolbar = [
+    {
+      icon: Bold,
+      label: "Bold",
+      cmd: () => editor?.chain().focus().toggleBold().run(),
+    },
+    {
+      icon: Italic,
+      label: "Italic",
+      cmd: () => editor?.chain().focus().toggleItalic().run(),
+    },
+    {
+      icon: Underline,
+      label: "Underline",
+      cmd: () => editor?.chain().focus().toggleUnderline?.().run(),
+    },
+    {
+      icon: Strikethrough,
+      label: "Strike",
+      cmd: () => editor?.chain().focus().toggleStrike().run(),
+    },
+    {
+      icon: List,
+      label: "Bullet List",
+      cmd: () => editor?.chain().focus().toggleBulletList().run(),
+    },
+    {
+      icon: ListOrdered,
+      label: "Numbered List",
+      cmd: () => editor?.chain().focus().toggleOrderedList().run(),
+    },
+    {
+      icon: Quote,
+      label: "Quote",
+      cmd: () => editor?.chain().focus().toggleBlockquote().run(),
+    },
+    {
+      icon: LinkIcon,
+      label: "Link",
+      cmd: () => editor?.chain().focus().toggleLink().run(),
+    },
+    {
+      icon: ImageIcon,
+      label: "Image",
+      cmd: () =>
+        editor
+          ?.chain()
+          .focus()
+          .setImage({ src: "https://via.placeholder.com/150" })
+          .run(),
+    },
+    {
+      icon: Code,
+      label: "Code",
+      cmd: () => editor?.chain().focus().toggleCodeBlock().run(),
+    },
+  ];
 
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selected = content.slice(start, end);
-
-    let before = "",
-      after = "",
-      newText = "",
-      cursorMove = 0;
-
-    if (type === "bold") {
-      before = "**";
-      after = "**";
-      newText = selected ? before + selected + after : "**bold text**";
-      cursorMove = selected ? before.length : 2;
-    } else if (type === "italic") {
-      before = "*";
-      after = "*";
-      newText = selected ? before + selected + after : "*italic*";
-      cursorMove = selected ? before.length : 1;
-    } else if (type === "strikethrough") {
-      before = "~~";
-      after = "~~";
-      newText = selected ? before + selected + after : "~~strike~~";
-      cursorMove = selected ? before.length : 2;
-    } else if (type === "underline") {
-      before = "<u>";
-      after = "</u>";
-      newText = selected ? before + selected + after : "<u>underline</u>";
-      cursorMove = selected ? before.length : 3;
-    } else if (type === "ulist") {
-      newText = selected
-        ? selected
-            .split("\n")
-            .map((line) => (line.startsWith("- ") ? line : `- ${line}`))
-            .join("\n")
-        : "- list item";
-      cursorMove = selected ? 0 : 2;
-    } else if (type === "olist") {
-      newText = selected
-        ? selected
-            .split("\n")
-            .map((line, i) => (/\d\. /.test(line) ? line : `${i + 1}. ${line}`))
-            .join("\n")
-        : "1. list item";
-      cursorMove = selected ? 0 : 3;
-    } else if (type === "quote") {
-      newText = selected
-        ? selected
-            .split("\n")
-            .map((line) => (line.startsWith("> ") ? line : `> ${line}`))
-            .join("\n")
-        : "> quote";
-      cursorMove = selected ? 0 : 2;
-    } else if (type === "code") {
-      before = "``";
-      after = "\n```";
-      newText = selected ? before + selected + after : "``````";
-      cursorMove = selected ? before.length : 3;
-    } else if (type === "link") {
-      newText = selected ? `[${selected}](url)` : "[text](url)";
-      cursorMove = selected ? 1 : 1;
-    } else if (type === "image") {
-      newText = selected ? `![alt](${selected})` : "![alt](url)";
-      cursorMove = selected ? 4 : 7;
-    }
-
-    // Compose new content
-    const updated = content.slice(0, start) + newText + content.slice(end);
-
-    setContent(updated);
-
-    // Focus textarea & select inserted text if needed
-    setTimeout(() => {
-      textarea.focus();
-      if (!selected) {
-        let selStart = start + cursorMove;
-        let selEnd = start + newText.length - cursorMove;
-        if (type === "link") {
-          selStart = start + 1;
-          selEnd = start + 5;
-        } else if (type === "image") {
-          selStart = start + 6;
-          selEnd = start + 9;
-        }
-        textarea.setSelectionRange(selStart, selEnd);
-      } else {
-        textarea.setSelectionRange(start + before.length, end + before.length);
-      }
-    }, 0);
-  }
-
-  const wordCount = content
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length > 0).length;
-  const charCount = content.length;
+  // Plaintext for stats
+  const wordCount = editor
+    ? editor.state.doc.textContent.trim().split(/\s+/).filter(Boolean).length
+    : 0;
+  const charCount = editor ? editor.state.doc.textContent.length : 0;
 
   return (
     <div
@@ -187,7 +175,8 @@ export default function NoteEditor({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="text-2xl font-bold border-none shadow-none focus-visible:ring-0 px-0"
-            placeholder="Welcome to NoteEditor"
+            placeholder="Note title"
+            disabled={isSaving}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -227,127 +216,34 @@ export default function NoteEditor({
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuItem
-                onClick={() => navigator.clipboard.writeText(content)}
+                onClick={() =>
+                  navigator.clipboard.writeText(editor?.getHTML() || "")
+                }
               >
                 <Copy className="h-4 w-4 mr-2" />
                 Copy note
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  /* implement export/duplicate logic */
-                }}
-              >
-                Export
-              </DropdownMenuItem>
+              {/* Add Export or Duplicate logic if needed */}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
       {/* Toolbar */}
-      <div className="border-b border-gray-200 px-6 py-2 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-1">
+      <div className="border-b border-gray-200 px-6 py-2 flex items-center gap-1 flex-wrap">
+        {toolbar.map(({ icon: Icon, label, cmd }) => (
           <Button
+            key={label}
             size="icon"
             variant="ghost"
-            onClick={() => insertMarkdown("bold")}
-            title="Bold (Ctrl+B)"
-          >
-            <Bold className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("italic")}
-            title="Italic (Ctrl+I)"
-          >
-            <Italic className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("underline")}
-            title="Underline (Ctrl+U)"
-          >
-            <Underline className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("strikethrough")}
-            title="Strikethrough"
-          >
-            <Strikethrough className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("ulist")}
-            title="Bullet List"
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("olist")}
-            title="Numbered List"
-          >
-            <ListOrdered className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("quote")}
-            title="Quote"
-          >
-            <Quote className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("link")}
-            title="Link (Ctrl+K)"
-          >
-            <LinkIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("image")}
-            title="Image"
-          >
-            <ImageIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => insertMarkdown("code")}
-            title="Code Block"
-          >
-            <Code className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <span>Last saved: {isSaving ? "saving..." : lastSaved}</span>
-          <Button
-            size="icon"
-            variant="ghost"
+            onClick={cmd}
+            title={label}
             className="h-8 w-8"
-            onClick={() => setActiveTab("preview")}
           >
-            <Eye className="h-4 w-4" />
+            <Icon className="h-4 w-4" />
           </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8"
-            onClick={() => setFocusMode((f) => !f)}
-          >
-            <Maximize className="h-4 w-4" />
-          </Button>
-        </div>
+        ))}
       </div>
-      {/* Editor Tabs */}
+      {/* Tabs for Edit/Preview */}
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as "edit" | "preview")}
@@ -367,39 +263,18 @@ export default function NoteEditor({
           value="edit"
           className="flex-1 px-6 py-4 overflow-y-auto m-0"
         >
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            className="w-full h-full resize-none border-none outline-none font-mono text-sm leading-relaxed"
-            placeholder="This is a simple note editor where you can write your thoughts, ideas, or anything you want to remember..."
-            onKeyDown={(e) => {
-              if (e.ctrlKey && e.key === "b") {
-                e.preventDefault();
-                insertMarkdown("bold");
-              } else if (e.ctrlKey && e.key === "i") {
-                e.preventDefault();
-                insertMarkdown("italic");
-              } else if (e.ctrlKey && e.key === "u") {
-                e.preventDefault();
-                insertMarkdown("underline");
-              } else if (e.ctrlKey && e.key === "k") {
-                e.preventDefault();
-                insertMarkdown("link");
-              }
-            }}
-          />
+          {/* TipTap Editor */}
+          <EditorContent editor={editor} className="w-full min-h-[300px]" />
         </TabsContent>
         <TabsContent
           value="preview"
           className="flex-1 px-6 py-4 overflow-y-auto prose max-w-none m-0"
         >
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeRaw]}
-          >
-            {content || "*Nothing to preview*"}
-          </ReactMarkdown>
+          <div
+            dangerouslySetInnerHTML={{
+              __html: editor?.getHTML() || "<i>Nothing to preview</i>",
+            }}
+          />
         </TabsContent>
       </Tabs>
       {/* Footer */}
@@ -426,8 +301,15 @@ export default function NoteEditor({
             <Maximize className="h-3 w-3" />
           </Button>
           <span className="text-xs">Focus Mode</span>
+          <span className="text-xs text-gray-500">
+            Last saved: {isSaving ? "saving..." : lastSaved}
+          </span>
         </div>
       </div>
+      {/* Inline error message */}
+      {errorMsg && (
+        <div className="text-red-600 text-sm text-center mt-2">{errorMsg}</div>
+      )}
     </div>
   );
 }

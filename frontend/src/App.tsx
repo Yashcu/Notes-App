@@ -1,3 +1,6 @@
+/**
+ * Main app entry — sets up routes, authentication, and layout.
+ */
 import {
   BrowserRouter as Router,
   Routes,
@@ -9,9 +12,12 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 
-function PrivateRoute({ children }: { children: React.JSX.Element }) {
+/**
+ * Protect Dashboard route — redirects to login if not authenticated.
+ */
+function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
-  return isAuthenticated ? children : <Navigate to="/login" />;
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 }
 
 function App() {
@@ -23,12 +29,13 @@ function App() {
         <Route
           path="/dashboard"
           element={
-            <PrivateRoute>
+            <RequireAuth>
               <Dashboard />
-            </PrivateRoute>
+            </RequireAuth>
           }
         />
-        <Route path="*" element={<Navigate to="/dashboard" />} />
+        {/* Redirect any unknown route to dashboard */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Router>
   );

@@ -1,3 +1,6 @@
+/**
+ * Auth Store — global auth state, persists user to localStorage using Zustand.
+ */
 import { create } from 'zustand';
 import type { User } from '../types';
 
@@ -9,10 +12,20 @@ interface AuthState {
   isAuthenticated: boolean;
 }
 
+const getInitialUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem('user') ?? 'null');
+  } catch {
+    return null;
+  }
+};
+
+const getInitialToken = () => localStorage.getItem('token') || null;
+
 export const useAuthStore = create<AuthState>((set) => ({
-  user: JSON.parse(localStorage.getItem('user') ?? 'null'),
-  token: localStorage.getItem('token'),
-  isAuthenticated: !!localStorage.getItem('token'),
+  user: getInitialUser(),
+  token: getInitialToken(),
+  isAuthenticated: !!getInitialToken(),
 
   setAuth: (user, token) => {
     localStorage.setItem('user', JSON.stringify(user));
@@ -25,6 +38,3 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user: null, token: null, isAuthenticated: false });
   },
 }));
-
-
-
